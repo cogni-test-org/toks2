@@ -25,6 +25,15 @@ governance:
   chain_id: "8453"
   base_url: "https://proposal.cognidao.org"
 
+# Required by this fork's vendored parser lineage (pre-governance-block schema);
+# mirrors `governance:` above. The operator's parser tolerates both blocks.
+cogni_dao:
+  chain_id: "8453"
+  dao_contract: "0x7ded1c96c6d27427f37f88418b2c3eb2c31ea7a5"
+  plugin_contract: "0xb39c4a7e5a23005dfe3ca12c0b67d82f2302a360"
+  signal_contract: "0xbb41ad328c9a5f35260b036a4b2fbaed2b4d80dd"
+  base_url: "https://proposal.cognidao.org"
+
 knowledge:
   database: "knowledge_toks2"
   remote:
