@@ -9,15 +9,30 @@
 
 schema_version: "0.1.4"
 
-node_id: "b927a9dd-6132-4fc9-a51e-e3cee2568e3c"
-scope_id: "b44d4394-3147-5787-acab-51546be6a3da"
+node_id: "cf909432-5324-4bff-bb2d-7806f545eeda"
+scope_id: "16bf15cc-16b5-5373-9764-d6b5ea081ce3"
 scope_key: "default"
 
 intent:
-  name: node-template
+  name: toks2
+  mission: "Define toks2's one-line mission here — refine in .cogni/repo-spec.yaml (surfaced at session start)."
 
-cogni_dao:
-  chain_id: "8453" # Base mainnet
+governance:
+  dao_contract: "0x7ded1c96c6d27427f37f88418b2c3eb2c31ea7a5"
+  plugin_contract: "0xb39c4a7e5a23005dfe3ca12c0b67d82f2302a360"
+  signal_contract: "0xbb41ad328c9a5f35260b036a4b2fbaed2b4d80dd"
+  token_contract: "0x2A6D69Fc6fA5bD7EDe8257979099B65cf1177A8F"
+  chain_id: "8453"
+  base_url: "https://proposal.cognidao.org"
+
+knowledge:
+  database: "knowledge_toks2"
+  remote:
+    provider: dolthub
+    owner: "cogni-test-nodes"
+    repo: "toks2"
+    url: "https://doltremoteapi.dolthub.com/cogni-test-nodes/toks2"
+    custody: cogni-owned
 
 # Activity ledger ingestion + approver allowlist.
 # `approvers` gates the `(admin)/` route group and write routes under
@@ -30,9 +45,13 @@ activity_ledger:
   activity_sources:
     github:
       attribution_pipeline: cogni-v0.0
-      source_refs: ["Cogni-DAO/standalone-node"]
+      source_refs: ["cogni-test-org/toks2"]
 
 payments:
+  status: pending_activation
+
+# Token distributions — activate after verifying DAO-controlled minted inventory.
+distributions:
   status: pending_activation
 
 # Born-reviewable default gates. When this node is minted as a single-node fork
@@ -55,11 +74,3 @@ gates:
   - type: ai-rule
     with:
       rule_file: repo-goal-alignment.yaml
-
-governance:
-  token_contract: "0x0166Db3d42603E790Fb685059DcAa37087B032c8"
-  emissions_holder: "0x717a747df71111a678202BfCD2E3B0081A9aeB56"
-
-distributions:
-  status: active
-  claim_contract_pattern: uniswap.merkle-distributor.v1
