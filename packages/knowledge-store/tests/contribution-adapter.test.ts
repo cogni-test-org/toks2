@@ -66,6 +66,19 @@ class FakeReservedSql {
       rows.count = 1;
       return rows;
     }
+    // cite-path lookups: both endpoints resolve, no incoming edges yet.
+    if (query.includes("SELECT 1 FROM knowledge WHERE id")) {
+      return [{ "?column?": 1 }];
+    }
+    if (query.includes("entry_type FROM knowledge")) {
+      return [{ entry_type: "finding" }];
+    }
+    if (query.includes("source_type FROM knowledge")) {
+      return [{ source_type: "external" }];
+    }
+    if (query.includes("citation_type FROM citations")) {
+      return [];
+    }
     if (query.includes("FROM knowledge_contribution_commits")) {
       return [
         {
@@ -233,61 +246,50 @@ describe("DoltgresKnowledgeContributionAdapter", () => {
     ).toBe(true);
   });
 
-  // bug.5024: an EDO batch citing a row that was merged to main AFTER the
-  // contribution branch forked. The target resolves on main but not on the
-  // branch HEAD; the cite must still succeed (main ∪ branch resolution) and
-  // the edge is recorded on the branch. createEdoDecision writes a
-  // `derives_from` edge to a hypothesis — no branch-local confidence recompute,
-  // so this exercises the cross-plane resolve + main-only INSERT path.
-  it("accepts a cross-plane EDO cite (target on main, absent from branch)", async () => {
-    const fake = new CrossPlaneFakeSql({
-      mainEntryTypes: new Map([["hyp-merged-main", "hypothesis"]]),
-      branchEntryTypes: new Map(),
-    });
+  it("applies a cite edit as a citations insert + cited-row confidence recompute", async () => {
+    const fake = new FakeSql();
 
-    const adapter = new DoltgresKnowledgeContributionAdapter({
-      sql: fake as unknown as Sql,
-    });
-    const rec = await adapter.createEdoDecision({
+    await adapterFor(fake).appendCommit({
+      contributionId: "contrib-agent-1-abc123",
       principal: { id: "agent-1", kind: "agent" },
-      message: "decide from a merged-main hypothesis on a fresh branch",
-      entry: {
-        id: "dec-1",
-        domain: "meta",
-        title: "decision",
-        content: "content",
-      },
-      derivesFromHypothesisId: "hyp-merged-main",
+      message: "link synthesis to atom",
+      edits: [
+        {
+          op: "cite",
+          citingId: "oss-cap-eval-harness",
+          citedId: "oss-promptfoo",
+          citationType: "supports",
+        },
+      ],
     });
 
-    expect(rec.contributionId).toBe("contrib-agent-1-abc123");
-    // The edge is recorded on the branch even though the target is main-only.
     expect(
       fake.conn.queries.some(
         (q) =>
-          q.includes("INSERT INTO citations") && q.includes("'hyp-merged-main'")
+          q.includes("INSERT INTO citations") &&
+          q.includes("'oss-cap-eval-harness'") &&
+          q.includes("'oss-promptfoo'") &&
+          q.includes("'supports'")
       )
     ).toBe(true);
-    // main was consulted for the cited entry_type when the branch lookup missed.
+    // the edge recomputes the cited row's confidence inside the branch
     expect(
-      fake.queries.some(
+      fake.conn.queries.some(
         (q) =>
-          q.includes("entry_type FROM knowledge") &&
-          q.includes("'hyp-merged-main'")
+          q.includes("UPDATE knowledge SET confidence_pct") &&
+          q.includes("'oss-promptfoo'")
       )
     ).toBe(true);
   });
 
-  // bug.5024 parity for the generic op:cite path (not the EDO batch ops). An
-  // agent appends a `supports` edge whose cited target was merged to main AFTER
-  // the branch forked: it resolves on main but is absent from the branch HEAD.
-  // The citing row lives on the branch. The cite must succeed (main ∪ branch),
-  // the edge INSERTs on the branch, and the branch-local confidence recompute
-  // is skipped because the cited row only exists on main.
-  it("accepts a cross-plane op:cite append (cited on main, citing on branch)", async () => {
+  // bug.5024: a branch contribution citing a row that was merged to main AFTER
+  // the branch forked. The target resolves on main but not on the branch HEAD;
+  // the cite must still succeed (main ∪ branch resolution) and skip the
+  // branch-local confidence recompute (no branch row to UPDATE).
+  it("accepts a cross-plane cite (target on main, absent from branch) and skips recompute", async () => {
     const fake = new CrossPlaneFakeSql({
-      mainEntryTypes: new Map([["cited-merged-main", "finding"]]),
-      branchEntryTypes: new Map([["citing-on-branch", "finding"]]),
+      mainEntryTypes: new Map([["cicd-agent-playbook", "finding"]]),
+      branchEntryTypes: new Map([["oss-langgraph", "finding"]]),
     });
 
     const adapter = new DoltgresKnowledgeContributionAdapter({
@@ -296,12 +298,12 @@ describe("DoltgresKnowledgeContributionAdapter", () => {
     const commit = await adapter.appendCommit({
       contributionId: "contrib-agent-1-abc123",
       principal: { id: "agent-1", kind: "agent" },
-      message: "link to a merged-main finding",
+      message: "cite a merged-main atom from a branch entry",
       edits: [
         {
           op: "cite",
-          citingId: "citing-on-branch",
-          citedId: "cited-merged-main",
+          citingId: "oss-langgraph",
+          citedId: "cicd-agent-playbook",
           citationType: "supports",
         },
       ],
@@ -313,7 +315,7 @@ describe("DoltgresKnowledgeContributionAdapter", () => {
       fake.conn.queries.some(
         (q) =>
           q.includes("INSERT INTO citations") &&
-          q.includes("'cited-merged-main'")
+          q.includes("'cicd-agent-playbook'")
       )
     ).toBe(true);
     // main was consulted for the cited entry_type when the branch lookup missed.
@@ -321,17 +323,117 @@ describe("DoltgresKnowledgeContributionAdapter", () => {
       fake.queries.some(
         (q) =>
           q.includes("entry_type FROM knowledge") &&
-          q.includes("'cited-merged-main'")
+          q.includes("'cicd-agent-playbook'")
       )
     ).toBe(true);
-    // Cross-plane: no branch-local confidence recompute on the main-only target.
+    // No branch-local recompute: the cited row isn't on the branch to UPDATE.
+    expect(
+      fake.conn.queries.some((q) =>
+        q.includes("UPDATE knowledge SET confidence_pct")
+      )
+    ).toBe(false);
+    expect(
+      fake.conn.queries.some((q) => q.includes("source_type FROM knowledge"))
+    ).toBe(false);
+  });
+
+  it("accepts a work-item tracking cite and skips confidence recompute", async () => {
+    const fake = new CrossPlaneFakeSql({
+      mainEntryTypes: new Map([["work-knowledge-write-planes", "finding"]]),
+      branchEntryTypes: new Map(),
+      mainWorkItemIds: new Set(["task.5017"]),
+    });
+
+    const adapter = new DoltgresKnowledgeContributionAdapter({
+      sql: fake as unknown as Sql,
+    });
+    await adapter.appendCommit({
+      contributionId: "contrib-agent-1-abc123",
+      principal: { id: "agent-1", kind: "agent" },
+      message: "link work item to durable knowledge",
+      edits: [
+        {
+          op: "cite",
+          citingId: "task.5017",
+          citedId: "work-knowledge-write-planes",
+          citationType: "tracks",
+        },
+      ],
+    });
+
+    expect(
+      fake.queries.some(
+        (q) => q.includes("FROM work_items") && q.includes("'task.5017'")
+      )
+    ).toBe(true);
     expect(
       fake.conn.queries.some(
         (q) =>
-          q.includes("UPDATE knowledge SET confidence_pct") &&
-          q.includes("'cited-merged-main'")
+          q.includes("INSERT INTO citations") &&
+          q.includes("'task.5017'") &&
+          q.includes("'work-knowledge-write-planes'") &&
+          q.includes("'tracks'")
+      )
+    ).toBe(true);
+    expect(
+      fake.conn.queries.some((q) =>
+        q.includes("UPDATE knowledge SET confidence_pct")
       )
     ).toBe(false);
+  });
+
+  it("rejects a work-item tracking cite when the work item is absent from main", async () => {
+    const fake = new CrossPlaneFakeSql({
+      mainEntryTypes: new Map([["work-knowledge-write-planes", "finding"]]),
+      branchEntryTypes: new Map(),
+      mainWorkItemIds: new Set(),
+    });
+
+    const adapter = new DoltgresKnowledgeContributionAdapter({
+      sql: fake as unknown as Sql,
+    });
+    await expect(
+      adapter.appendCommit({
+        contributionId: "contrib-agent-1-abc123",
+        principal: { id: "agent-1", kind: "agent" },
+        message: "link missing work item",
+        edits: [
+          {
+            op: "cite",
+            citingId: "task.9999",
+            citedId: "work-knowledge-write-planes",
+            citationType: "tracks",
+          },
+        ],
+      })
+    ).rejects.toBeInstanceOf(CitationTargetNotFoundError);
+  });
+
+  it("rejects a work-item tracking cite when the knowledge endpoint is branch-only", async () => {
+    const fake = new CrossPlaneFakeSql({
+      mainEntryTypes: new Map(),
+      branchEntryTypes: new Map([["branch-only-entry", "finding"]]),
+      mainWorkItemIds: new Set(["task.5017"]),
+    });
+
+    const adapter = new DoltgresKnowledgeContributionAdapter({
+      sql: fake as unknown as Sql,
+    });
+    await expect(
+      adapter.appendCommit({
+        contributionId: "contrib-agent-1-abc123",
+        principal: { id: "agent-1", kind: "agent" },
+        message: "link branch-only knowledge to work",
+        edits: [
+          {
+            op: "cite",
+            citingId: "branch-only-entry",
+            citedId: "task.5017",
+            citationType: "tracks",
+          },
+        ],
+      })
+    ).rejects.toBeInstanceOf(CitationTargetNotFoundError);
   });
 
   it("throws CitationTargetNotFoundError when the cited row is on neither branch nor main", async () => {
@@ -344,16 +446,18 @@ describe("DoltgresKnowledgeContributionAdapter", () => {
       sql: fake as unknown as Sql,
     });
     await expect(
-      adapter.createEdoDecision({
+      adapter.appendCommit({
+        contributionId: "contrib-agent-1-abc123",
         principal: { id: "agent-1", kind: "agent" },
-        message: "decide from a bogus hypothesis id",
-        entry: {
-          id: "dec-2",
-          domain: "meta",
-          title: "decision",
-          content: "content",
-        },
-        derivesFromHypothesisId: "does-not-exist-anywhere",
+        message: "cite a bogus id",
+        edits: [
+          {
+            op: "cite",
+            citingId: "oss-langgraph",
+            citedId: "does-not-exist-anywhere",
+            citationType: "supports",
+          },
+        ],
       })
     ).rejects.toBeInstanceOf(CitationTargetNotFoundError);
   });
@@ -363,7 +467,7 @@ describe("DoltgresKnowledgeContributionAdapter", () => {
  * Fakes that distinguish the branch (reserved connection) plane from the merged
  * `main` (pool) plane so the cross-plane cite path (bug.5024) can be exercised.
  * `entry_type FROM knowledge` reads resolve against the per-plane id maps; the
- * domain-registry + citing-row existence checks always resolve on the branch.
+ * citing-row existence check (`SELECT 1 ...`) always resolves on the branch.
  */
 function idFromQuery(query: string): string | undefined {
   return query.match(/id = '([^']+)'/)?.[1];
@@ -380,19 +484,35 @@ class CrossPlaneFakeReservedSql {
     this.queries.push(query);
     if (query.includes("dolt_hashof")) return [{ dolt_hashof: "head123" }];
     if (query.includes("dolt_commit")) return [{ dolt_commit: ["{next456}"] }];
-    if (query.includes("FROM domains")) return [{ "?column?": 1 }];
+    if (query.includes("SELECT 1 FROM knowledge WHERE id"))
+      return [{ "?column?": 1 }];
     if (query.includes("entry_type FROM knowledge")) {
       const t = this.branchEntryTypes.get(idFromQuery(query) ?? "");
       return t ? [{ entry_type: t }] : [];
     }
-    // assertKnowledgeRowExists (citing-row presence) resolves on the branch.
-    if (query.includes("SELECT 1 FROM knowledge")) {
-      return this.branchEntryTypes.has(idFromQuery(query) ?? "") ? [{}] : [];
-    }
+    if (query.includes("source_type FROM knowledge"))
+      return [{ source_type: "external" }];
+    if (query.includes("citation_type FROM citations")) return [];
     if (query.includes("UPDATE knowledge_contributions")) {
       const rows: Record<string, unknown>[] & { count?: number } = [];
       rows.count = 1;
       return rows;
+    }
+    if (query.includes("FROM knowledge_contribution_commits")) {
+      return [
+        {
+          contribution_id: "contrib-agent-1-abc123",
+          seq: 4,
+          commit_hash: "next456",
+          principal_kind: "agent",
+          principal_id: "agent-1",
+          auth_source: "bearer",
+          message: "append",
+          edit_count: 1,
+          source_ref: "contribution:contrib-agent-1-abc123:4",
+          created_at: new Date("2026-05-19T00:00:00.000Z"),
+        },
+      ];
     }
     return [];
   }
@@ -406,18 +526,26 @@ class CrossPlaneFakeSql {
   readonly queries: string[] = [];
   readonly conn: CrossPlaneFakeReservedSql;
   private readonly mainEntryTypes: Map<string, string>;
+  private readonly mainWorkItemIds: Set<string>;
 
   constructor(opts: {
     mainEntryTypes: Map<string, string>;
     branchEntryTypes: Map<string, string>;
+    mainWorkItemIds?: Set<string>;
   }) {
     this.mainEntryTypes = opts.mainEntryTypes;
+    this.mainWorkItemIds = opts.mainWorkItemIds ?? new Set();
     this.conn = new CrossPlaneFakeReservedSql(opts.branchEntryTypes);
   }
 
   async unsafe(query: string): Promise<Record<string, unknown>[]> {
     this.queries.push(query);
     if (query.includes("FROM knowledge_contributions")) return [record];
+    if (query.includes("FROM work_items")) {
+      return this.mainWorkItemIds.has(idFromQuery(query) ?? "")
+        ? [{ "?column?": 1 }]
+        : [];
+    }
     if (query.includes("entry_type FROM knowledge")) {
       const t = this.mainEntryTypes.get(idFromQuery(query) ?? "");
       return t ? [{ entry_type: t }] : [];

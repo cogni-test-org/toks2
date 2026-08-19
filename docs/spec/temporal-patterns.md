@@ -94,7 +94,7 @@ Ensure all Temporal workflows are replay-safe, Workflow code performs no I/O dir
 // Workflow: deterministic orchestration only
 export async function CollectSourceStreamWorkflow(
   source: string,
-  streamId: string
+  streamId: string,
 ): Promise<void> {
   // Activity: load cursor from DB
   const cursor = await loadCursorActivity(source, streamId);
@@ -103,7 +103,7 @@ export async function CollectSourceStreamWorkflow(
   const { events, nextCursor } = await collectSignalsActivity(
     source,
     streamId,
-    cursor
+    cursor,
   );
 
   // Activity: ingest signals (DB write)
@@ -120,7 +120,7 @@ export async function CollectSourceStreamWorkflow(
 // Triggered by incident lifecycle event, not timer
 export async function GovernanceAgentWorkflow(
   incidentId: string,
-  eventType: IncidentLifecycleEvent["type"]
+  eventType: IncidentLifecycleEvent["type"],
 ): Promise<void> {
   // Activity: check cooldown
   const shouldRun = await checkCooldownActivity(incidentId, COOLDOWN_MINUTES);
@@ -177,6 +177,58 @@ export async function IncidentRouterWorkflow(scope: string): Promise<void> {
 
 ### Schedule Configuration
 
+#### Node recurring work
+
+This is the canonical pattern for a node to run recurring or scheduled work on the Cogni
+Temporal substrate. The substrate is **one shared generic worker**. For normal recurring
+route/graph work, a node runs **no worker** and writes **no** Temporal workflow code.
+
+The model is three parts: **author -> create -> execute**.
+
+**1. Author** the node-owned work as a route or graph:
+
+- For AI work that fits one run, add a graph in `graphs/`.
+- For plain recurring work, add a route or use `defineScheduledJob`.
+- Optional repo-spec `schedules[]` is an infra-as-code declaration path, not the
+  runtime tenant create path.
+
+**2. Create.** Node users create schedules through the node app (`POST /api/v1/schedules`).
+`graphId` schedules start `GraphRunWorkflow`; `route` schedules start `NodeTaskWorkflow`.
+The node-direct target is that the node app holds its own Temporal client and creates the
+schedule itself. The long-term contract keeps the operator out of the create path.
+
+**3. Execute -- shared generic worker.** On each tick the shared worker runs the generic
+workflow under the node tenant identity. `NodeTaskWorkflow` calls the node route;
+`GraphRunWorkflow` runs the node graph. The node provides a route or graph, not custom
+workflow code.
+
+```
+schedule.create
+  route -> NodeTaskWorkflow
+  graph -> GraphRunWorkflow
+
+NodeTaskWorkflow
+  scheduledFor = TemporalScheduledStartTime
+  -> dispatchNodeTaskActivity: POST {nodeUrl}{route}
+     Idempotency-Key: {nodeId}/{scheduleId}/{scheduledFor}
+```
+
+The route must dedup on the idempotency key. A key the receiver ignores does not make a POST
+idempotent.
+
+Queue topology is shared-worker infrastructure. Tenancy is carried in workflow input; the
+target is a bounded set of workload queues, not one queue or worker per node. Transitional
+per-node queues may exist during migration and as the sovereign escape hatch.
+
+#### Durable multi-step / HITL roadmap
+
+If recurring work needs durable state **between** route/graph steps -- signals, long human
+waits, or multi-step orchestration that cannot honestly be collapsed into one graph run --
+the target is a generic shared-worker step-list engine, not a per-node worker by default.
+
+Use a per-node worker only when the generic engine cannot express the workflow. It is opt-in
+and never the node-template default.
+
 #### Standard Schedule Setup
 
 ```typescript
@@ -208,7 +260,6 @@ await temporalClient.schedule.create({
 | Update/Pause | `PATCH /schedules`  | None          |
 | Delete       | `DELETE /schedules` | None          |
 | Execute      | Temporal fires      | Runs workflow |
-| Reconcile    | Admin CLI only      | None          |
 
 ### Pipeline Stage Composition
 
@@ -351,17 +402,15 @@ This violates ONE_RUN_EXECUTION_PATH. The graph run is invisible to the dashboar
 
 #### Namespaces
 
-| Namespace          | Purpose                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `cogni-governance` | Governance workflows (signal collection, routing, agents) |
-| `cogni-scheduler`  | User-created scheduled graph executions                   |
+| Namespace     | Purpose                              |
+| ------------- | ------------------------------------ |
+| `cogni-<env>` | One shared namespace per environment |
 
 #### Task Queues
 
-| Queue              | Workers             | Workflows                 |
-| ------------------ | ------------------- | ------------------------- |
-| `governance-tasks` | `governance-worker` | Collection, Router, Agent |
-| `scheduler-tasks`  | `scheduler-worker`  | ScheduledGraphRun         |
+| Queue                      | Workers                   | Workflows                               |
+| -------------------------- | ------------------------- | --------------------------------------- |
+| `scheduler-tasks-<nodeId>` | shared `scheduler-worker` | `NodeTaskWorkflow` / `GraphRunWorkflow` |
 
 #### Search Attributes
 

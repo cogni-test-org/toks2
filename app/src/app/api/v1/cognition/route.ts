@@ -8,11 +8,14 @@
  *   with a live skills index + domain pointers from the knowledge hub, plus a
  *   rendered markdown bundle a SessionStart hook echoes into agent context.
  * Scope: Single authed GET (any principal: cookie-session human OR bearer
- *   agent). Reads via container.knowledgeStorePort. Index-only — full entry
- *   bodies stay behind the same authed read routes (KNOWLEDGE_READ_REQUIRES_PRINCIPAL).
+ *   agent). Reads via container.knowledgeStorePort. Index-first for skills +
+ *   domains — their full bodies stay behind the same authed read routes
+ *   (KNOWLEDGE_READ_REQUIRES_PRINCIPAL); the current-node orientation entry is
+ *   rendered IN FULL so the bootstrap IS the agent's operating map.
  *   The public bootstrap seam stays /api/v1/agent/register: register → key → cognition.
  * Invariants:
- *   - INDEX_NOT_CONTENT: returns skill/domain pointers, never full bodies.
+ *   - INDEX_FIRST: returns skill/domain pointers; the current-node orientation
+ *     entry is the one full body (ORIENTATION_LOADED_IN_FULL).
  *   - IRREDUCIBLE_INVARIANTS_ALWAYS_PRESENT: invariants + markdown render even
  *     when the hub is unconfigured or empty.
  *   - NO_INTERNAL_BIND_ADDR: origin derived from forwarded headers first.
@@ -30,9 +33,11 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/app/_lib/auth/session";
 import { getContainer } from "@/bootstrap/container";
 import { wrapRouteHandlerWithLogging } from "@/bootstrap/http";
+import { getNodeMission, getNodeName } from "@/shared/config";
 import { serverEnv } from "@/shared/env";
 import {
 	isCognitionEntry,
+	type OrientationEntry,
 	renderBundleMarkdown,
 	SESSION_BOOTSTRAP_INVARIANTS,
 } from "./_bundle";
@@ -70,10 +75,19 @@ export const GET = wrapRouteHandlerWithLogging(
 		const container = getContainer();
 		const origin = publicOrigin(request);
 		const node = container.nodeId;
+		const name = getNodeName();
+		const mission = getNodeMission();
 		const buildSha = serverEnv().APP_BUILD_SHA ?? "unknown";
+		const generatedAt = new Date().toISOString();
 
 		const skillsIndex: CognitionSkillPointer[] = [];
 		const domainPointers: CognitionDomainPointer[] = [];
+		// The current node's orientation entry id, by `<slug>-agent-orientation`
+		// convention — captured during the scan, its excerpt fetched below. A
+		// node-specific entry (`<name>-agent-orientation`) wins over the generic
+		// `cogni-agent-orientation` starter seed every node inherits.
+		const exactOrientationId = `${name}-agent-orientation`;
+		let orientationId: string | null = null;
 
 		// Cognition is delivered live from the hub; the irreducible invariants below
 		// are the only piece that must survive an unconfigured/empty hub.
@@ -81,6 +95,9 @@ export const GET = wrapRouteHandlerWithLogging(
 		if (port) {
 			const domains = await port.listDomainsFull();
 			for (const d of domains) {
+				// Suppress empty domains (e.g. a placeholder `nodes` with 0 entries):
+				// a bare count is noise in a precious index.
+				if (d.entryCount === 0) continue;
 				domainPointers.push({
 					domain: d.id,
 					description: d.description,
@@ -90,6 +107,11 @@ export const GET = wrapRouteHandlerWithLogging(
 					limit: PER_DOMAIN_LIMIT,
 				});
 				for (const r of rows) {
+					if (r.id === exactOrientationId) {
+						orientationId = r.id;
+					} else if (!orientationId && r.id.endsWith("-agent-orientation")) {
+						orientationId = r.id;
+					}
 					if (!isCognitionEntry(r.entryType)) continue;
 					skillsIndex.push({
 						id: r.id,
@@ -101,6 +123,17 @@ export const GET = wrapRouteHandlerWithLogging(
 			}
 		}
 
+		let orientation: OrientationEntry | null = null;
+		if (port && orientationId) {
+			const entry = await port.getKnowledge(orientationId);
+			if (entry) {
+				orientation = {
+					id: entry.id,
+					content: entry.content,
+				};
+			}
+		}
+
 		const toolingInvariants = [...SESSION_BOOTSTRAP_INVARIANTS];
 		const recallProtocol =
 			`RECALL both planes before writing: merged via GET ${origin}/api/v1/knowledge?domain=<domain>, ` +
@@ -109,18 +142,24 @@ export const GET = wrapRouteHandlerWithLogging(
 
 		const markdown = renderBundleMarkdown({
 			node,
+			name,
+			mission,
+			generatedAt,
 			origin,
 			buildSha,
 			toolingInvariants,
 			skillsIndex,
 			domainPointers,
+			orientation,
 		});
 
 		ctx.log.info(
 			{
 				node,
+				name,
 				skills: skillsIndex.length,
 				domains: domainPointers.length,
+				orientation: orientation?.id ?? null,
 				hub: Boolean(port),
 			},
 			"cognition.bundle_success",
@@ -129,9 +168,11 @@ export const GET = wrapRouteHandlerWithLogging(
 		const response = NextResponse.json(
 			CognitionBundleResponseSchema.parse({
 				node,
+				name,
+				mission,
 				version: "v1",
 				buildSha,
-				generatedAt: new Date().toISOString(),
+				generatedAt,
 				toolingInvariants,
 				skillsIndex,
 				domainPointers,
