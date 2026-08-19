@@ -15,6 +15,8 @@
 import type { KnowledgeRow } from "@cogni/node-contracts";
 import type { ReactElement } from "react";
 
+import { Markdown } from "@/components";
+import { EntityCitationLinks } from "../../_components/EntityCitationLinks";
 import { ChainPanel } from "./ChainPanel";
 import { ConfidenceBar } from "./ConfidenceBar";
 import { HtmlRenderer } from "./HtmlRenderer";
@@ -57,7 +59,7 @@ export function KnowledgeEntryFields({
         {isHtml ? (
           <HtmlRenderer html={item.content} title={item.title} />
         ) : (
-          <p className="whitespace-pre-wrap leading-relaxed">{item.content}</p>
+          <Markdown content={item.content} className="leading-relaxed" />
         )}
       </Field>
 
@@ -69,6 +71,8 @@ export function KnowledgeEntryFields({
           )}
         </div>
       </Field>
+
+      <EntityCitationLinks entityId={item.id} />
 
       {item.tags && item.tags.length > 0 && (
         <Field label="Tags">

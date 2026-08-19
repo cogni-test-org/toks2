@@ -14,6 +14,7 @@
 "use client";
 
 import { CheckCircle, Clock, Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { useMemo } from "react";
 import {
@@ -28,7 +29,13 @@ import {
 } from "@/components";
 import { EpochCountdown } from "@/features/governance/components/EpochCountdown";
 import { EpochDetail } from "@/features/governance/components/EpochDetail";
+import { EpochReviewAction } from "@/features/governance/components/EpochReviewAction";
+import { ExecuteDistributionPanel } from "@/features/governance/components/ExecuteDistributionPanel";
 import { useEpochsPage } from "@/features/governance/hooks/useEpochsPage";
+import {
+  useEpochReviewReadiness,
+  useOpenEpochReview,
+} from "@/features/governance/hooks/useOpenEpochReview";
 import { buildPieChartData } from "@/features/governance/lib/build-pie-data";
 import type { EpochView } from "@/features/governance/types";
 
@@ -72,9 +79,14 @@ function StatusBadge({
 
 function CurrentEpochSection({
   epoch,
+  isCurrentApprover,
 }: {
   readonly epoch: EpochView;
+  readonly isCurrentApprover: boolean;
 }): ReactElement {
+  const router = useRouter();
+  const openReview = useOpenEpochReview();
+  const reviewReady = useEpochReviewReadiness(epoch.status, epoch.periodEnd);
   const sorted = useMemo(
     () =>
       [...epoch.contributors].sort((a, b) => Number(b.units) - Number(a.units)),
@@ -140,6 +152,20 @@ function CurrentEpochSection({
       </div>
 
       <EpochDetail epoch={epoch} hideHeader />
+
+      <EpochReviewAction
+        status={epoch.status}
+        reviewReady={reviewReady}
+        isApprover={isCurrentApprover}
+        isPending={openReview.isPending}
+        error={openReview.error}
+        onOpen={() =>
+          openReview.mutate(epoch.id, {
+            onSuccess: () => router.push("/gov/review"),
+          })
+        }
+        onContinue={() => router.push("/gov/review")}
+      />
     </div>
   );
 }
@@ -189,7 +215,17 @@ function PastEpochsSection({
                   "text-right",
                   "text-right",
                 ]}
-                expandedContent={<EpochDetail epoch={epoch} />}
+                expandedContent={
+                  <div className="space-y-4">
+                    <EpochDetail epoch={epoch} />
+                    {/* Finalized epochs surface the owner PUBLISH control. The panel
+                        self-gates on manifest + distributor via the authed route, so
+                        it quietly shows "not ready" until R3 has recorded them. */}
+                    {epoch.status === "finalized" && (
+                      <ExecuteDistributionPanel epochId={epoch.id} />
+                    )}
+                  </div>
+                }
                 cells={[
                   <span key="id" className="font-bold text-foreground/60">
                     {epoch.id}
@@ -217,7 +253,11 @@ function PastEpochsSection({
   );
 }
 
-export function CurrentEpochView(): ReactElement {
+export function CurrentEpochView({
+  isCurrentApprover,
+}: {
+  readonly isCurrentApprover: boolean;
+}): ReactElement {
   const { data, isLoading, error } = useEpochsPage();
 
   if (error) {
@@ -250,7 +290,11 @@ export function CurrentEpochView(): ReactElement {
   return (
     <div className="space-y-10">
       {data.current ? (
-        <CurrentEpochSection epoch={data.current} />
+        <CurrentEpochSection
+          key={data.current.id}
+          epoch={data.current}
+          isCurrentApprover={isCurrentApprover}
+        />
       ) : (
         <div className="rounded-lg border bg-card p-12 text-center">
           <p className="text-muted-foreground">No active epoch</p>

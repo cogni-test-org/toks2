@@ -47,3 +47,15 @@ export COGNI_TEMPLATE_ROOT="$HOME/dev/cogni-template"
 ```
 
 The operator consumes the pushed digest and owns URL/DNS/deployment state.
+
+## Inheriting from node-template (3-tier sync)
+
+The operator keeps every node aligned with `node-template` automatically (a GitHub App webhook fires on each node-template release). Changes propagate in **three tiers, by path** — know which tier your edit lands in:
+
+| Tier | Paths | What happens to your edit |
+| --- | --- | --- |
+| **1 — CI contract** | `.github/workflows/{ci,pr-build,pr-lint}.yaml`, `scripts/check-node-ci-workflow.mjs` | **Force-synced** from node-template. Do not diverge here; CI fixes land upstream first. |
+| **2 — Substrate** | `app/src/app/api/**`, `app/src/shared/**`, `app/src/bootstrap/**`, `graphs/**`, `packages/**` | **Auto-merged** from node-template each release (conflict-free); you inherit framework + cognition improvements. |
+| **3 — Your node** | `app/src/app/(public)/**`, `app/src/features/home/**`, branding/theme, `.cogni/repo-spec.yaml`, `.cogni/persona/**` | **Never synced** — build your node's identity, homepage, and features here in stability. |
+
+The Tier-3 carve-out is declared in `.cogni/sync-manifest.yaml#node_local` (data, not hardcoded), so the boundary moves with the template. Full contract: the operator knowledge entry `node-template-sync-contract`.
