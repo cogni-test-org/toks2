@@ -32,25 +32,25 @@ export const KnowledgeEntryInputSchema = z.object({
   content: z.string().min(1).max(65536),
   entryType: z.string().min(1).max(64).optional(),
   tags: z.array(z.string().max(64)).max(32).optional(),
-  confidencePct: z.number().int().min(0).max(100).optional(),
 });
 export type KnowledgeEntryInput = z.infer<typeof KnowledgeEntryInputSchema>;
 
 /**
  * Citation edge types writable through the generic contribution flow. These
- * are the non-temporal knowledge edges; the hypothesis-loop edges
- * (`evidence_for`, `derives_from`, `validates`, `invalidates`) are deliberately
- * excluded — those carry the `EDGE_TYPE_MATCHES_CITED_ENTRY_TYPE`
- * hypothesis-target invariant and stay behind the dedicated `/api/v1/edo/*`
- * endpoints. Keeping the primitive (a typed `citing → cited` edge) and only
- * widening which types a generic contribution may write is the
- * reuse-over-bespoke choice.
+ * are the non-temporal knowledge edges from `CitationTypeSchema` (domain
+ * `schemas.ts`); the hypothesis-loop edges (`evidence_for`, `derives_from`,
+ * `validates`, `invalidates`) are deliberately excluded — those carry the
+ * `EDGE_TYPE_MATCHES_CITED_ENTRY_TYPE` hypothesis-target invariant and stay
+ * behind the dedicated `/api/v1/edo/*` endpoints. Keeping the primitive
+ * (a typed `citing → cited` edge) and only widening which types a generic
+ * contribution may write is the reuse-over-bespoke choice.
  */
 export const ContributionCitationTypeSchema = z.enum([
   "supports",
   "contradicts",
   "extends",
   "supersedes",
+  "tracks",
 ]);
 export type ContributionCitationType = z.infer<
   typeof ContributionCitationTypeSchema
@@ -65,7 +65,7 @@ export const KnowledgeContributionEditSchema = z
       entry: KnowledgeEntryInputSchema,
     }),
     z.object({
-      op: z.literal("deprecate"),
+      op: z.literal("delete"),
       targetRowId: z.string().min(1).max(256),
       reason: z.string().min(1).max(512),
     }),

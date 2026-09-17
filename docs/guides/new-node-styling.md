@@ -96,11 +96,32 @@ export const metadata: Metadata = {
 
 ## 4. Homepage
 
-File:
+Primary file:
 
-- `app/src/app/(public)/page.tsx`
+- `app/src/features/home/content.ts` ← **edit this**
 
-Customize the public landing page hero, calls to action, and domain-specific copy. Signed-in users redirect to `/chat`.
+The template now ships a full, multi-section landing page (the same shape the Poly
+and Resy nodes use): an animated hero with a live agent-stream console, a "showcase
+cards" grid, a public "activity feed" of explainable signals, and a closing stats
+band. You do **not** rebuild this layout per node — the layout components in
+`app/src/features/home/components/*` are generic and read everything from
+`content.ts`.
+
+A first-class customization is **words + colors**:
+
+1. Open `content.ts` and walk it top to bottom. Replace every placeholder —
+   `HERO`, `AGENT_STREAM_SEQUENCES`, `SHOWCASE_*`, `FEED_*`, `STATS` — with copy and
+   data that sell **your** node's mission. Keep the data _shapes_; change the values.
+2. Set your brand hue in `tailwind.css` (section 2 above). The hero gradient,
+   pills, bars, and feed all follow `--primary` / `--accent-*` automatically.
+
+That's it for most nodes. The page (`app/src/app/(public)/page.tsx`) composes the
+sections and redirects signed-in users to `/chat`; you rarely touch it. Only edit
+the components in `components/*` if you need to add or remove a whole section.
+
+> Reference customizations: Poly (prediction markets — "Bet smarter. Together.")
+> and Resy (reservations) both started from this exact framework and changed only
+> content + hue. Aim for that bar, not a one-token recolor.
 
 ## 5. Chat Defaults
 
@@ -111,13 +132,35 @@ Files:
 
 Tailor the default graph and graph list to the node's domain. Prediction-market nodes should expose market-analysis prompts and graphs; reservation nodes should expose reservation workflows; general nodes can keep `langgraph:brain`.
 
+## The README is yours
+
+A minted node ships node-template's `README.md`, which opens `# node-template` and then
+describes the template — layout conventions, image tags, what the deploy plane omits.
+Rewrite it to describe YOUR node.
+
+**Why this is a first-class step and not a nicety.** The README is the first thing a
+human or an agent reads on the repo, so it is identity in exactly the sense
+`.cogni/sync-manifest.yaml` uses the word. That file's rule is:
+
+> a node's IDENTITY and PRESENTATION are its own; the shell and the contracts are not.
+
+`README.md` is therefore carved out as Tier-3 (`node_local`), the same treatment
+`app/src/styles/tailwind.css` received after every sync overwrote each fork's design
+tokens with node-template's. Tier-3 means node-template never clobbers your copy — so
+unlike the app shell, this file is safe to diverge and yours to own.
+
+**Source the mission from one place.** Lead with `.cogni/repo-spec.yaml` `intent.mission`,
+the same field feeding the homepage hero. Two hand-written descriptions of the same node
+drift; one source cannot.
+
 ## Checklist
 
 - [ ] Update logo or icon in header and sidebar.
 - [ ] Update visible node name and external links.
+- [ ] Rewrite `README.md` (see "The README is yours" below).
 - [ ] Pick a primary hue and update `tailwind.css` light and dark variables.
 - [ ] Set `layout.tsx` metadata.
-- [ ] Customize the public homepage.
+- [ ] Customize the public homepage by rewriting `app/src/features/home/content.ts` (hero, agent stream, showcase cards, activity feed, stats).
 - [ ] Customize chat graph defaults and suggestions.
 - [ ] Verify `pnpm check` passes.
 - [ ] Verify the dev server shows the expected logo, colors, and name.

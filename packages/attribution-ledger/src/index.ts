@@ -110,10 +110,13 @@ export {
   buildEIP712TypedData,
   type CanonicalMessageParams,
   computeApproverSetHash,
+  type EIP712DeploymentEnvironment,
+  EIP712_DEPLOYMENT_ENVIRONMENTS,
   EIP712_DOMAIN_NAME,
   EIP712_DOMAIN_VERSION,
   type EIP712TypedData,
   type EIP712TypedDataParams,
+  parseEIP712DeploymentEnvironment,
 } from "./signing";
 
 // Store port interface + types
@@ -126,9 +129,17 @@ export type {
   AttributionStatementLineRecord,
   AttributionStatementSignature,
   AttributionStore,
+  AppendSettlementRevisionParams,
+  AppendSettlementRevisionResult,
+  ClaimantLiabilityLifecycleRecord,
+  ClaimantLiabilityRecord,
   ClaimantStore,
   CloseIngestionWithEvaluationsParams,
   CursorStore,
+  DistributionClaimRecord,
+  DistributionLeafRecord,
+  DistributionManifestRecord,
+  DistributionManifestStore,
   EpochReader,
   EpochUserProjection,
   EpochWriter,
@@ -138,6 +149,7 @@ export type {
   IdentityResolver,
   IngestionCursor,
   IngestionReceipt,
+  InsertDistributionManifestParams,
   InsertFinalClaimantAllocationParams,
   InsertPoolComponentParams,
   InsertReceiptClaimantsParams,
@@ -153,6 +165,9 @@ export type {
   ReceiptClaimantsRecord,
   ReceiptStore,
   ReviewSubjectOverrideRecord,
+  SettlementLeafRecord,
+  SettlementRevisionRecord,
+  SettlementStore,
   SelectedReceiptWithMetadata,
   SelectionReader,
   SelectionStore,
@@ -166,6 +181,15 @@ export type {
   UpsertSelectionParams,
 } from "./store";
 export { toReviewSubjectOverrides } from "./store";
+
+// Settlement lifecycle read model
+export {
+  type DeriveSettlementLifecycleParams,
+  deriveSettlementLifecycle,
+  type EpochSettlementLifecycle,
+  type PublicationEvidence,
+  type SettlementLifecycle,
+} from "./settlement-lifecycle";
 
 // Validated store wrapper
 export { createValidatedAttributionStore } from "./validated-store";
