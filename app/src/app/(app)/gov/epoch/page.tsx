@@ -3,9 +3,9 @@
 
 /**
  * Module: `@app/(app)/gov/epoch/page`
- * Purpose: Server entrypoint for the current epoch governance page.
- * Scope: Server component only; delegates all client behavior to CurrentEpochView. Does not perform data fetching.
- * Invariants: Auth enforced by (app) layout guard.
+ * Purpose: Server entrypoint for the unified epoch overview.
+ * Scope: Server component only; delegates lifecycle rendering to CurrentEpochView.
+ * Invariants: Auth enforced by (app) layout guard. Admin settlement actions live in /gov/review.
  * Side-effects: none (server render only)
  * Links: src/features/governance/types.ts
  * @public

@@ -46,19 +46,26 @@ function withTimeout<T>(
 export async function getTreasurySnapshotFacade(
   ctx: RequestContext
 ): Promise<TreasurySnapshotResponseV1> {
-  const { treasuryReadPort } = getContainer();
   const daoConfig = getDaoConfig();
   if (!daoConfig) {
-    ctx.log.error(
+    ctx.log.warn(
       {
         event: EVENT_NAMES.TREASURY_CONFIG_MISSING,
         errorCode: "TREASURY_NO_DAO_CONFIG",
       },
-      "cogni_dao section missing or incomplete in repo-spec"
+      "governance section missing or incomplete in repo-spec"
     );
-    throw new Error("cogni_dao config missing from repo-spec");
+    return {
+      treasuryAddress: "",
+      chainId: CHAIN_ID,
+      blockNumber: "0",
+      balances: [],
+      timestamp: Date.now(),
+      staleWarning: true,
+    };
   }
 
+  const { treasuryReadPort } = getContainer();
   const treasuryAddress = daoConfig.dao_contract;
   const start = performance.now();
 

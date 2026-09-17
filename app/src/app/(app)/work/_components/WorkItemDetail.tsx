@@ -5,8 +5,15 @@
 
 import type { WorkItemDto } from "@cogni/node-contracts";
 import type { ReactElement } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components";
+import {
+  Markdown,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components";
 
+import { EntityCitationLinks } from "../../_components/EntityCitationLinks";
 import { StatusPill, TypeIcon } from "./work-item-icons";
 
 type SubjectRef = WorkItemDto["assignees"][number];
@@ -74,7 +81,7 @@ export function WorkItemDetail({
                 <StatusPill status={item.status} />
                 {item.priority != null && (
                   <span className="inline-flex rounded-md bg-muted px-2 py-0.5 font-medium text-xs">
-                    P{item.priority}
+                    {item.priority}
                   </span>
                 )}
                 {item.estimate != null && (
@@ -85,10 +92,20 @@ export function WorkItemDetail({
               </div>
 
               {/* Summary */}
-              {item.summary && <Field label="Summary">{item.summary}</Field>}
+              {item.summary && (
+                <Field label="Summary">
+                  <Markdown content={item.summary} />
+                </Field>
+              )}
 
               {/* Outcome */}
-              {item.outcome && <Field label="Outcome">{item.outcome}</Field>}
+              {item.outcome && (
+                <Field label="Outcome">
+                  <Markdown content={item.outcome} />
+                </Field>
+              )}
+
+              <EntityCitationLinks entityId={item.id} />
 
               {/* Project */}
               {item.projectId && (
